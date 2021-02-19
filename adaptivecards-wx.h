@@ -48,57 +48,75 @@ namespace AdaptiveCards
         }
 
         using TSinks = std::vector<std::pair<std::string,std::function<void(std::string)>>>;
+        using TSetter = std::function<void(std::string const &)>;
+        using TExpressionSet = std::function<void(TSetter, std::string const &value)>;
+        using TResize = std::function<void(int)>;
+        using TAddWidget = std::function<void(wxControl *)>;
+        using TWidgetFactory = std::function<TResize(rapidjson::Value &, wxWindow *parent, TExpressionSet, TAddWidget)>;
 
         auto CreateCardTemplate(std::string const &src, Frame *frame) {
-            TSinks sinks;
-            rapidjson::Document doc;
-            std::regex const match_expr {"\\$\\{(.+)\\}"};
-            doc.Parse(src.c_str());
-            auto sizer {new wxBoxSizer(wxVERTICAL)};
-            std::function<void(int)> on_size = +[](int){};
-            for (auto &element: doc["body"].GetArray()) {
-                if (std::string("TextBlock") == element["type"].GetString()) {
-                    auto text{element.HasMember("text") ? std::string(element["text"].GetString()) : std::string()};
-                    auto label {new wxStaticText(frame, -1, 
-                        text.c_str())};
-                    label->SetAutoLayout(true);
-                    // if (element.HasMember("wrap") && element["wrap"].GetBool()) {
-                    //     label->Wrap(frame->m_width);
-                    //     std::cerr << __LINE__ << " width: " << frame->m_width << "\n";
-                    // }
-                    auto font {label->GetFont()};
+            static const std::map<std::string,TWidgetFactory> widget_factories {
+                {"TextBlock", [](rapidjson::Value &element, wxWindow *frame, TExpressionSet expr, TAddWidget add) {
+                    auto const text {element.HasMember("text") ? std::string(element["text"].GetString()) : std::string()};
+                    auto const label {new wxStaticText(frame, -1, text.c_str())};
                     if (element.HasMember("size")) {
-                        auto const size_value {element["size"].GetString()};
-                        if (std::string("Medium") == size_value) {
-                            font.SetPointSize(font.GetPointSize() * 3 / 2);
-                        }
+                        expr([label](auto size_value) {
+                            auto font {label->GetFont()};
+                            if (std::string("Medium") == size_value) {
+                                font.SetPointSize(font.GetPointSize() * 3 / 2);
+                            }
+                            label->SetFont(font);
+                        }, element["size"].GetString());
                     }
                     if (element.HasMember("weight")) {
-                        auto const weight_value {element["weight"].GetString()};
-                        if (std::string("Bolder") == weight_value) {
-                            font.SetWeight(wxFONTWEIGHT_BOLD);
-                        }
-                    }
-                    label->SetFont(font);
-                    sizer->Add(label, wxSizerFlags().Top().Expand().Border(wxALL, 3));
-                    std::smatch match_result;
-                    if (std::regex_match(text, match_result, match_expr)) {
-                        sinks.push_back(std::make_pair(match_result[1], 
-                        [label,sizer,w=frame->m_width](auto v){ 
-                            label->SetLabelText(v);
-                            label->Wrap(w);
-                            sizer->Layout();
-                        }));
-                        on_size = [on_size,label](int new_size){
-                            on_size(new_size);
-                            std::string t{label->GetLabelText()};
-                            for(auto pos {t.find('\n')}; pos != std::string::npos; pos = t.find('\n')) {
-                                t.replace(pos, 1, std::string(1, ' '));
+                        expr([label](auto weight_value){
+                            auto font {label->GetFont()};
+                            if (std::string("Bolder") == weight_value) {
+                                font.SetWeight(wxFONTWEIGHT_BOLD);
                             }
-                            label->SetLabelText(t.c_str());
-                            label->Wrap(new_size);
-                        };
+                            label->SetFont(font);
+                        }, element["weight"].GetString());
                     }
+                    add(label);
+                    expr([label](auto text_value) {
+                        label->SetLabelText(text_value);
+                    }, text);
+                    return (TResize)[label](auto new_size){
+                        std::string t{label->GetLabelText()};
+                        for(auto pos {t.find('\n')}; pos != std::string::npos; pos = t.find('\n')) {
+                            t.replace(pos, 1, std::string(1, ' '));
+                        }
+                        label->SetLabelText(t.c_str());
+                        label->Wrap(new_size);
+                    };
+                }}
+            };
+            TSinks sinks;
+            rapidjson::Document doc;
+            doc.Parse(src.c_str());
+            auto sizer {new wxBoxSizer(wxVERTICAL)};
+            std::function<void(int)> on_size = [sizer](int){ sizer->Layout(); };
+            for (auto &element: doc["body"].GetArray()) {
+                auto const element_type {element["type"].GetString()};
+                auto const pos {widget_factories.find(element_type)};
+                if (pos != widget_factories.end()) {
+                    auto resize = pos->second(element, frame, [&sinks](TSetter setter, std::string const &text) {
+                        std::smatch match_result;
+                        static std::regex const match_expr {"\\$\\{(.+)\\}"};
+                        if (std::regex_match(text, match_result, match_expr)) {
+                            sinks.push_back(std::make_pair(match_result[1], setter));
+                        }
+                        else {
+                            setter(text);
+                        }
+                    },
+                    [sizer](auto widget){
+                        sizer->Add(widget, wxSizerFlags().Top().Expand().Border(wxALL, 3));
+                    });
+                    on_size = [resize,on_size](int new_size){
+                        resize(new_size);
+                        on_size(new_size);
+                    };
                 }
             }
             frame->SetSizer(sizer);
