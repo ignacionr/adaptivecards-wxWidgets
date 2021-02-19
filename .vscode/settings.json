@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "cctype": "cpp",
+        "locale": "cpp",
+        "regex": "cpp"
+    }
+}
