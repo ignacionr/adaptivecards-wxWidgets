@@ -68,9 +68,15 @@ namespace AdaptiveCards
                     // }
                     auto font {label->GetFont()};
                     if (element.HasMember("size")) {
-                        auto size_value {element["size"].GetString()};
+                        auto const size_value {element["size"].GetString()};
                         if (std::string("Medium") == size_value) {
                             font.SetPointSize(font.GetPointSize() * 3 / 2);
+                        }
+                    }
+                    if (element.HasMember("weight")) {
+                        auto const weight_value {element["weight"].GetString()};
+                        if (std::string("Bolder") == weight_value) {
+                            font.SetWeight(wxFONTWEIGHT_BOLD);
                         }
                     }
                     label->SetFont(font);
