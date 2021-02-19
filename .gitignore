@@ -1,4 +1,2 @@
 /main
-/main.o
-/wrapsizer
-/wrapsizer.o
+*.o
