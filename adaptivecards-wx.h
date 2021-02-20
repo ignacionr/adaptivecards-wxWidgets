@@ -11,6 +11,7 @@
 #include <wx/fs_inet.h>
 #include <wx/mstream.h>
 #include <wx/image.h> 
+#include <memory>
 #include "rapidjson/rapidjson.h"
 #include "rapidjson/document.h"
 #include <curl/curl.h>
@@ -121,15 +122,13 @@ namespace AdaptiveCards
                         }, element["weight"].GetString());
                     }
                     add(label);
-                    expr([label](auto text_value) {
+                    auto original_text {std::make_shared<std::string>(text)};
+                    expr([label, original_text](auto text_value) {
+                        *original_text = text_value;
                         label->SetLabelText(text_value);
                     }, text);
-                    return [label](int new_size) {
-                        std::string t{label->GetLabelText()};
-                        for(auto pos {t.find('\n')}; pos != std::string::npos; pos = t.find('\n')) {
-                            t.replace(pos, 1, std::string(1, ' '));
-                        }
-                        label->SetLabelText(t.c_str());
+                    return [label, original_text](int new_size) {
+                        label->SetLabelText(*original_text);
                         label->Wrap(new_size);
                     };
                 }},
@@ -178,7 +177,7 @@ namespace AdaptiveCards
                     auto const size_expr {element.HasMember("size") ? element["size"].GetString() : "Medium"};
                     expr([img_control](std::string const &value) {
                         if (value == "Small") {
-                            img_control->SetSize(wxDefaultCoord, wxDefaultCoord, 50, wxDefaultCoord, wxSIZE_AUTO_HEIGHT);
+                            img_control->SetSize(wxDefaultCoord, wxDefaultCoord, 75, wxDefaultCoord, wxSIZE_AUTO_HEIGHT);
                         }
                         else if (value == "Medium") {
                             img_control->SetSize(wxDefaultCoord, wxDefaultCoord, 250, wxDefaultCoord, wxSIZE_AUTO_HEIGHT);
