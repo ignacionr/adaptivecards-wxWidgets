@@ -1,5 +1,5 @@
-CXXFLAGS=`wx-config --cxxflags` -std=c++17
-LDFLAGS=`wx-config --libs`
+CXXFLAGS=`wx-config --cxxflags` -std=c++17 -g
+LDFLAGS=`wx-config --libs` -lcurl
 
 main: main.o
 	$(CXX) $(LDFLAGS) main.o $(LOADLIBES) $(LDLIBS) -o main
@@ -11,3 +11,6 @@ wrapsizer: wrapsizer.o
 
 wrapsizer.o: wrapsizer.cpp
 	$(CXX) $(CXXFLAGS) wrapsizer.cpp -c -o wrapsizer.o
+
+clean:
+	rm -f *.o main

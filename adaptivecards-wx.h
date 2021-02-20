@@ -8,13 +8,54 @@
 #include <stack>
 #include <wx/wx.h>
 #include <wx/wrapsizer.h>
+#include <wx/fs_inet.h>
+#include <wx/mstream.h>
+#include <wx/image.h> 
 #include "rapidjson/rapidjson.h"
 #include "rapidjson/document.h"
+#include <curl/curl.h>
 
 #include <iostream>
 
 namespace AdaptiveCards
 {
+    class CurlInit {
+    public:
+        CurlInit() {
+            curl_global_init(CURL_GLOBAL_ALL);
+        }
+        ~CurlInit() {
+            curl_global_cleanup();
+        }
+    };
+
+    class url_stream {
+        std::stringstream ss_;
+        static CurlInit curl_init_;
+
+        static size_t write_data(void *ptr, size_t size, size_t nmemb, url_stream *pthis)
+        {
+            auto const total{size * nmemb};
+            pthis->ss_.write(static_cast<const char *>(ptr), total);
+            return total;
+        }
+    public:
+        url_stream(std::string const &url) {
+            auto curl_handle = curl_easy_init();
+            curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
+            curl_easy_setopt(curl_handle, CURLOPT_VERBOSE, 1L);
+            curl_easy_setopt(curl_handle, CURLOPT_NOPROGRESS, 1L);
+            curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, &url_stream::write_data);
+            curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, this);
+            curl_easy_perform(curl_handle);
+            curl_easy_cleanup(curl_handle);
+        }
+        wxMemoryInputStream input_stream() {
+            ss_.flush();
+            return wxMemoryInputStream(ss_.str().data(), ss_.str().size());
+        }
+    };
+
     class Frame : public wxFrame
     {
     public:
@@ -41,6 +82,8 @@ namespace AdaptiveCards
     public:
         bool OnInit() override
         {
+            wxInitAllImageHandlers();
+
             auto frame = new Frame("Hello World", wxPoint(50, 50), wxSize(450, 340));
             frame->Show(true);
             ShowCard(initial_card, "{}", frame);
@@ -129,6 +172,34 @@ namespace AdaptiveCards
                     container->SetSizer(sizer);
                     add(container);
                     return resize;
+                }},
+                {"Image", [](rapidjson::Value &element, wxWindow *frame, TExpressionSet expr, TAddWidget add) {
+                    auto img_control {new wxStaticBitmap{frame, -1, wxBitmap{1,1}}};
+                    expr([img_control](std::string const &value){
+                        auto in {url_stream(value)};
+                        auto input_stream {in.input_stream()};
+                        wxImage image{input_stream};
+                        if(image.Ok())
+                        {
+                            auto const width {img_control->GetSize().GetWidth()};
+                            std::cerr << __LINE__ << " width: " << width << std::endl;
+                            image.Rescale(width, width * image.GetHeight() / image.GetWidth());
+                            wxBitmap bmp{image};
+                            img_control->SetBitmap(bmp);
+                        }
+                    }, element["url"].GetString());
+                    auto const size_expr {element.HasMember("size") ? element["size"].GetString() : "Medium"};
+                    expr([img_control](std::string const &value) {
+                        if (value == "Small") {
+                            img_control->SetSize(wxDefaultCoord, wxDefaultCoord, 50, wxDefaultCoord, wxSIZE_AUTO_HEIGHT);
+                        }
+                        else if (value == "Medium") {
+                            img_control->SetSize(wxDefaultCoord, wxDefaultCoord, 250, wxDefaultCoord, wxSIZE_AUTO_HEIGHT);
+                        }
+                        img_control->SetAutoLayout(false);
+                    }, size_expr);
+                    add(img_control);
+                    return [](int){};
                 }}
             };
             TSinks sinks;
@@ -204,3 +275,5 @@ namespace AdaptiveCards
 wxBEGIN_EVENT_TABLE(AdaptiveCards::Frame, wxFrame)
 EVT_MENU(wxID_EXIT, AdaptiveCards::Frame::OnExit)
 wxEND_EVENT_TABLE()
+
+AdaptiveCards::CurlInit AdaptiveCards::url_stream::curl_init_;
