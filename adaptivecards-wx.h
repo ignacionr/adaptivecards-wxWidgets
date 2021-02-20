@@ -175,6 +175,16 @@ namespace AdaptiveCards
                 }},
                 {"Image", [](rapidjson::Value &element, wxWindow *frame, TExpressionSet expr, TAddWidget add) {
                     auto img_control {new wxStaticBitmap{frame, -1, wxBitmap{1,1}}};
+                    auto const size_expr {element.HasMember("size") ? element["size"].GetString() : "Medium"};
+                    expr([img_control](std::string const &value) {
+                        if (value == "Small") {
+                            img_control->SetSize(wxDefaultCoord, wxDefaultCoord, 50, wxDefaultCoord, wxSIZE_AUTO_HEIGHT);
+                        }
+                        else if (value == "Medium") {
+                            img_control->SetSize(wxDefaultCoord, wxDefaultCoord, 250, wxDefaultCoord, wxSIZE_AUTO_HEIGHT);
+                        }
+                        img_control->SetAutoLayout(false);
+                    }, size_expr);
                     expr([img_control](std::string const &value){
                         auto in {url_stream(value)};
                         auto input_stream {in.input_stream()};
@@ -188,16 +198,6 @@ namespace AdaptiveCards
                             img_control->SetBitmap(bmp);
                         }
                     }, element["url"].GetString());
-                    auto const size_expr {element.HasMember("size") ? element["size"].GetString() : "Medium"};
-                    expr([img_control](std::string const &value) {
-                        if (value == "Small") {
-                            img_control->SetSize(wxDefaultCoord, wxDefaultCoord, 50, wxDefaultCoord, wxSIZE_AUTO_HEIGHT);
-                        }
-                        else if (value == "Medium") {
-                            img_control->SetSize(wxDefaultCoord, wxDefaultCoord, 250, wxDefaultCoord, wxSIZE_AUTO_HEIGHT);
-                        }
-                        img_control->SetAutoLayout(false);
-                    }, size_expr);
                     add(img_control);
                     return [](int){};
                 }}
