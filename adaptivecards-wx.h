@@ -51,7 +51,7 @@ namespace AdaptiveCards
         using TSetter = std::function<void(std::string const &)>;
         using TExpressionSet = std::function<void(TSetter, std::string const &value)>;
         using TResize = std::function<void(int)>;
-        using TAddWidget = std::function<void(wxControl *)>;
+        using TAddWidget = std::function<void(wxWindow *)>;
         using TWidgetFactory = std::function<TResize(rapidjson::Value &, wxWindow *parent, TExpressionSet, TAddWidget)>;
 
         auto CreateCardTemplate(std::string const &src, Frame *frame) {
@@ -81,7 +81,7 @@ namespace AdaptiveCards
                     expr([label](auto text_value) {
                         label->SetLabelText(text_value);
                     }, text);
-                    return (TResize)[label](auto new_size){
+                    return [label](int new_size) {
                         std::string t{label->GetLabelText()};
                         for(auto pos {t.find('\n')}; pos != std::string::npos; pos = t.find('\n')) {
                             t.replace(pos, 1, std::string(1, ' '));
@@ -89,6 +89,46 @@ namespace AdaptiveCards
                         label->SetLabelText(t.c_str());
                         label->Wrap(new_size);
                     };
+                }},
+                {"ColumnSet", [](rapidjson::Value &element, wxWindow *frame, TExpressionSet expr, TAddWidget add) {
+                    auto container{new wxPanel{frame}};
+                    auto sizer {new wxBoxSizer(wxHORIZONTAL)};
+                    TResize resize {[](int ){}};
+                    for (auto &col: element["columns"].GetArray()) {
+                        auto const pos {widget_factories.find(col["type"].GetString())};
+                        if (pos != widget_factories.end()) {
+                            auto added_resize {pos->second(col, container, expr, [sizer](wxWindow *control){
+                                sizer->Add(control);
+                            })};
+                            resize = [resize, added_resize](int new_size){
+                                resize(new_size);
+                                added_resize(new_size);
+                            };
+                        }
+                    }
+                    container->SetSizer(sizer);
+                    add(container);
+                    return resize;
+                }},
+                {"Column", [](rapidjson::Value &element, wxWindow *frame, TExpressionSet expr, TAddWidget add) {
+                    auto container{new wxPanel{frame}};
+                    auto sizer {new wxBoxSizer(wxVERTICAL)};
+                    TResize resize {[](int ){}};
+                    for (auto &col: element["items"].GetArray()) {
+                        auto const pos {widget_factories.find(col["type"].GetString())};
+                        if (pos != widget_factories.end()) {
+                            auto added_resize {pos->second(col, container, expr, [sizer](wxWindow *control){
+                                sizer->Add(control);
+                            })};
+                            resize = [resize, added_resize](int new_size){
+                                resize(new_size);
+                                added_resize(new_size);
+                            };
+                        }
+                    }
+                    container->SetSizer(sizer);
+                    add(container);
+                    return resize;
                 }}
             };
             TSinks sinks;
